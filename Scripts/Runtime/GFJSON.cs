@@ -105,7 +105,7 @@ namespace NightRider.GFJSON
                     var name = keyword;
                     keyword = sp.GetJSONKeyword();
                     if( keyword != ":" ) {
-                        Log.Error( $"Expecting ':' parsing JSON at position {sp.Position}, but got '{keyword}' instead (at '{name}')!" );
+                        Debug.LogError( $"Expecting ':' parsing JSON at position {sp.Position}, but got '{keyword}' instead (at '{name}')!" );
                     }
 
                     // Parse & add object
@@ -120,7 +120,7 @@ namespace NightRider.GFJSON
                     } else if( keyword == "}" ) {   // Reached end of object
                         break;
                     } else {
-                        Log.Error( $"Invalid keyword '{keyword}' at position {sp.Position} in JSON object: expecting , or }}" );
+                        Debug.LogError( $"Invalid keyword '{keyword}' at position {sp.Position} in JSON object: expecting , or }}" );
                     }
                 }
 
@@ -146,7 +146,7 @@ namespace NightRider.GFJSON
                     } else if( keyword == "]" ) {   // Reached end of array
                         break;
                     } else {
-                        Log.Error( $"Invalid keyword '{keyword}' at position {sp.Position} in JSON array: expecting , or ]" );
+                        Debug.LogError( $"Invalid keyword '{keyword}' at position {sp.Position} in JSON array: expecting , or ]" );
                     }
                 }
             } else {
@@ -171,7 +171,7 @@ namespace NightRider.GFJSON
         {
             var json = Parse( jsonStr );
             if( json == null ) {
-                Log.Error( "Error parsing JSON string!" );
+                Debug.LogError( "Error parsing JSON string!" );
                 return default(T);
             }
             return (T)Deserialize( json, typeof(T), true, options );
@@ -181,7 +181,7 @@ namespace NightRider.GFJSON
         {
             if( json == null )
             {
-                Log.Error( "DeserializeToNewObject: JSON object is null!" );
+                Debug.LogError( "DeserializeToNewObject: JSON object is null!" );
                 return default( T );
             }
             return (T)Deserialize( json, typeof( T ), true, options );
@@ -202,7 +202,7 @@ namespace NightRider.GFJSON
         {
             var json = Parse( jsonStr );
             if( json == null ) {
-                Log.Error( "Error parsing JSON string!" );
+                Debug.LogError( "Error parsing JSON string!" );
                 return false;
             }
 
@@ -269,7 +269,7 @@ namespace NightRider.GFJSON
                 return;
             }
             if( fieldType == null ) {   // This should never happen if the code is correct, but just in case
-                Log.Error( $"No fieldType for obj {fieldObj}" );
+                Debug.LogError( $"No fieldType for obj {fieldObj}" );
                 return;
             }
 
@@ -359,7 +359,7 @@ namespace NightRider.GFJSON
                     sb.Append( Serialize( dict, args[0], args[1], options ) );
                 } else {
                     sb.Append( "{}" );
-                    //Log.Warning( $"Not serialized: {fieldType} / {fieldObj}" );
+                    //Debug.LogWarning( $"Not serialized: {fieldType} / {fieldObj}" );
                 }
 
 
@@ -372,7 +372,7 @@ namespace NightRider.GFJSON
                     sb.Append( $"\"{so.name}\"" );
                 } else {
                     sb.Append( "{}" );
-                    Log.Warning( $"Not serialized: {fieldType} / {fieldObj}" );
+                    Debug.LogWarning( $"Not serialized: {fieldType} / {fieldObj}" );
                 }
 
             } else if( fieldType.IsClassOrStruct() )            // *** Class or Struct
@@ -447,7 +447,7 @@ namespace NightRider.GFJSON
                 return value;
             } else if( fieldType == typeof( ObscuredInt ) ) {           // *** ObscuredInt
                 if( !int.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out int val ) ) {
-                    Log.Error( $"Invalid ObscuredInt value: '{root.value}'" );
+                    Debug.LogError( $"Invalid ObscuredInt value: '{root.value}'" );
                     return null;
                 }
                 ObscuredInt value = val;
@@ -455,7 +455,7 @@ namespace NightRider.GFJSON
             } else if( fieldType == typeof( ObscuredLong ) )            // *** ObscuredLong
             {
                 if( !long.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out long val ) ) {
-                    Log.Error( $"Invalid ObscuredLong value: '{root.value}'" );
+                    Debug.LogError( $"Invalid ObscuredLong value: '{root.value}'" );
                     return null;
                 }
                 ObscuredLong value = val;
@@ -463,7 +463,7 @@ namespace NightRider.GFJSON
             } else if( fieldType == typeof( ObscuredFloat ) )           // *** ObscuredFloat
             {
                 if( !float.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out float val ) ) {
-                    Log.Error( $"Invalid ObscuredFloat value: '{root.value}'" );
+                    Debug.LogError( $"Invalid ObscuredFloat value: '{root.value}'" );
                     return null;
                 }
                 ObscuredFloat value = val;
@@ -471,7 +471,7 @@ namespace NightRider.GFJSON
             } else if( fieldType == typeof( ObscuredDouble ) )          // *** ObscuredDouble
             {
                 if( !double.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out double val ) ) {
-                    Log.Error( $"Invalid ObscuredDouble value: '{root.value}'" );
+                    Debug.LogError( $"Invalid ObscuredDouble value: '{root.value}'" );
                     return null;
                 }
                 ObscuredDouble value = val;
@@ -484,42 +484,42 @@ namespace NightRider.GFJSON
             } else if( fieldType == typeof( byte ) )                    // *** byte
             {
                 if( !byte.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out byte val ) ) {
-                    Log.Error( $"Invalid byte value: '{root.value}'" );
+                    Debug.LogError( $"Invalid byte value: '{root.value}'" );
                     return null;
                 }
                 return val;
             } else if( fieldType == typeof( int ) )                     // *** int
             {
                 if( !int.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out int val ) ) {
-                    Log.Error( $"Invalid int value: '{root.value}'" );
+                    Debug.LogError( $"Invalid int value: '{root.value}'" );
                     return null;
                 }
                 return val;
             } else if( fieldType == typeof( long ) )                    // *** long
             {
                 if( !long.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out long val ) ) {
-                    Log.Error( $"Invalid long value: '{root.value}'" );
+                    Debug.LogError( $"Invalid long value: '{root.value}'" );
                     return null;
                 }
                 return val;
             } else if( fieldType == typeof( float ) )                   // *** float
             {
                 if( !float.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out float val ) ) {
-                    Log.Error( $"Invalid float value: '{root.value}'" );
+                    Debug.LogError( $"Invalid float value: '{root.value}'" );
                     return null;
                 }
                 return val;
             } else if( fieldType == typeof( double ) )                  // *** double
             {
                 if( !double.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out double val ) ) {
-                    Log.Error( $"Invalid double value: '{root.value}'" );
+                    Debug.LogError( $"Invalid double value: '{root.value}'" );
                     return null;
                 }
                 return val;
             } else if( fieldType.IsEnum )                               // *** Enum - serialized as int
             {
                 if( !int.TryParse( root.value, numberStyle, CultureInfo.InvariantCulture, out int val ) ) {
-                    Log.Error( $"Invalid enum (int) value: '{root.value}'" );
+                    Debug.LogError( $"Invalid enum (int) value: '{root.value}'" );
                     return null;
                 }
                 return Enum.ToObject( fieldType, val ); // Convert long to proper enum value
@@ -560,7 +560,7 @@ namespace NightRider.GFJSON
                         return dictionary;
                     }
                     else {
-                        Log.Error( $"GFJSON: Unsupported type {fieldType.FullName}" );
+                        Debug.LogError( $"GFJSON: Unsupported type {fieldType.FullName}" );
                         return null;
                     }
                 }
@@ -605,12 +605,12 @@ namespace NightRider.GFJSON
                         return list;
 
                     } else {
-                        Log.Error( $"GFJSON: Unsupported type {fieldType.FullName}" );
+                        Debug.LogError( $"GFJSON: Unsupported type {fieldType.FullName}" );
                         return null;
                     }
 
                 } else {
-                    Log.Error( $"GFJSON: Unsupported type {fieldType.FullName}" );
+                    Debug.LogError( $"GFJSON: Unsupported type {fieldType.FullName}" );
                     return null;
                 }
 
@@ -618,7 +618,7 @@ namespace NightRider.GFJSON
                         && !allowCreationOfScriptableObjects
                         && Reflection.IsSubclassOfRawGeneric( typeof( ScriptableObject ), fieldType ) )
             {
-                Log.Error( $"Not de-serialized: {fieldType}" );
+                Debug.LogError( $"Not de-serialized: {fieldType}" );
                 return null;
             } else if( fieldType.IsClassOrStruct() )                    // *** Class or Struct
             {
@@ -644,7 +644,7 @@ namespace NightRider.GFJSON
                 return obj;
             } else
             {
-                Log.Error( $"Unsupported de-serialize type: {fieldType}" );
+                Debug.LogError( $"Unsupported de-serialize type: {fieldType}" );
                 return root.value;
             }
         }
