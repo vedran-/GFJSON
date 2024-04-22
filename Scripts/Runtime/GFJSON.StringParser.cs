@@ -24,8 +24,20 @@ namespace NightRider.GFJSON
         
         public static bool IsJSONChar( char ch ) => char.IsLetterOrDigit( ch ) || ch == '.' || ch == '-' || ch == '_' || ch == '+';
 
-        #region [Util] JSON_Unescape()
-        public static string JSON_Unescape( string str )
+        #region [Util] Escape()
+        public static string Escape( string str )
+        {
+            return str.Replace( "\\", @"\\" )
+                .Replace( "\n", @"\n" )
+                .Replace( "\r", @"\r" )
+                .Replace( "\"", @"\""" )
+                .Replace( "\t", @"\t" )
+                .Replace( "\f", @"\f" )
+                .Replace( "\b", @"\b" );
+        }
+        #endregion Escape()
+        #region [Util] Unescape()
+        public static string Unescape( string str )
         {
             return str.Replace( @"\\", "\\" )
                 .Replace( @"\n", "\n" )
@@ -35,7 +47,7 @@ namespace NightRider.GFJSON
                 .Replace( @"\f", "\f" )
                 .Replace( @"\b", "\b" );
         }
-        #endregion JSON_Unescape()
+        #endregion Unescape()
         
         
         #region GetJSONKeyword()
@@ -67,7 +79,7 @@ namespace NightRider.GFJSON
                 else Debug.LogError( "Warning parsing JSON: expecing \" but reached end of file instead!" );
                 var text = data.Substring( startPos, position - startPos - 1 );
 
-                return JSON_Unescape( text );
+                return Unescape( text );
 
             } else if( IsJSONChar( ch ) )           // *** Letter or digit - read until letters, digits, or dot (.). Can start with '-'
             {

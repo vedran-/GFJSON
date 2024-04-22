@@ -4,9 +4,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.Serialization;
 using System.Text;
 using UnityEngine;
 #if SUPPORT_OBSCURED_VALUES
@@ -17,7 +14,6 @@ namespace NightRider.GFJSON
 {
     public static class GFJSON
     {
-        [Flags] 
         public enum Options
         {
             // Serializes similar to Unity JSON serializer
@@ -31,16 +27,23 @@ namespace NightRider.GFJSON
 
             // If set, it will also reference ScriptableObjects
             ReferenceScriptableObjects  = 0x0004,
+
+            // If set, it will also serialize Dictionary<,>
+            SerializeDictionaries       = 0x0008,
+#if JSON_HASHSET_SUPPORT
+            // If set, it will also serialize HashSet<>
+            SerializeHashSet            = 0x0016,
+#endif
         }
 
-        #region class Object
+        #region class JSONObject
         [Serializable]
-        public class Object
+        public class JSONObject
         {
             // NOTE: Only one of these 3 variables should have value, the rest should be null
             public string                       value = null;       // For direct values (e.g. int, string, bool, ...)
-            public Dictionary<string, Object>   objects = null;     // For classes and structs
-            public List<Object>                 list = null;        // For arrays and lists
+            public Dictionary<string, JSONObject>   objects = null;     // For classes and structs
+            public List<JSONObject>                 list = null;        // For arrays and lists
 
             #region ToString()
             public void ToString( StringBuilder sb )
@@ -78,20 +81,20 @@ namespace NightRider.GFJSON
             }
             #endregion ToString()
         }
-        #endregion class Object
+        #endregion class JSONObject
 
         #region [API] Parse()
-        public static Object Parse( string json ) => Parse( new StringParser( json ) );
-        public static Object Parse( StringParser sp )
+        public static JSONObject Parse( string json ) => Parse( new StringParser( json ) );
+        public static JSONObject Parse( StringParser sp )
         {
             if( sp.EOF() ) return null;
 
-            var obj = new Object();
+            var obj = new JSONObject();
 
             var keyword = sp.GetJSONKeyword();
             if( keyword == "{" )            // *** Parse object
             {
-                obj.objects = new Dictionary<string, Object>();
+                obj.objects = new Dictionary<string, JSONObject>();
 
                 keyword = sp.GetJSONKeyword();
                 while( !sp.EOF() )
@@ -122,7 +125,7 @@ namespace NightRider.GFJSON
 
             } else if( keyword == "[" )     // *** Parse array
             {
-                obj.list = new List<Object>();
+                obj.list = new List<JSONObject>();
 
                 if( sp.PeekNextJSONKeyword() == "]" ) {     // Properly finished with list
                     sp.GetJSONKeyword();    // Skip ']'
@@ -154,22 +157,6 @@ namespace NightRider.GFJSON
             return obj;
         }
         #endregion Parse()
-        #region [API] Serialize<T>()
-        /// <summary>
-        /// Serializes any (Unity serializable) object to JSON string
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="obj"></param>
-        /// <returns></returns>
-        public static string Serialize<T>( T obj, Options options = Options.None )
-        {
-            var sb = new StringBuilder();
-            sb.Append( "{" );
-            Serialize( typeof(T), obj, sb, options );
-            sb.Append( "}" );
-            return sb.ToString();
-        }
-        #endregion Serialize()
 
         #region [API] DeserializeToNewObject<T>()
         /// <summary>
@@ -177,7 +164,7 @@ namespace NightRider.GFJSON
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="jsonStr"></param>
-        /// <param name="options">Deserialization options</param>
+        /// <param name="options">Serialization/deserialization options</param>
         /// <returns></returns>
         public static T DeserializeToNewObject<T>( string jsonStr, Options options = Options.None )
         {
@@ -189,7 +176,7 @@ namespace NightRider.GFJSON
             return (T)Deserialize( json, typeof(T), true, options );
         }
 
-        public static T DeserializeToNewObject<T>( GFJSON.Object json, Options options = Options.None )
+        public static T DeserializeToNewObject<T>( GFJSON.JSONObject json, Options options = Options.None )
         {
             if( json == null )
             {
@@ -208,7 +195,7 @@ namespace NightRider.GFJSON
         /// <typeparam name="T"></typeparam>
         /// <param name="jsonStr"></param>
         /// <param name="obj">Into which object to deserialize</param>
-        /// <param name="options">Deserialization options</param>
+        /// <param name="options">Serialization/deserialization options</param>
         /// <returns></returns>
         public static bool DeserializeInto<T>( string jsonStr, T obj, Options options = Options.None ) where T : class
         {
@@ -218,7 +205,7 @@ namespace NightRider.GFJSON
                 return false;
             }
 
-            WalkAllSerializedFields( typeof(T), obj, ( fieldName, fieldInfo, fieldObj ) =>
+            Reflection.WalkAllSerializedFields( typeof(T), obj, ( fieldName, fieldInfo, fieldObj ) =>
             {
                 var childRoot = json.objects.ContainsKey(fieldName) ? json.objects[fieldName] : null;
                 if( childRoot == null ) return; // This field doesn't appear in JSON, so just skip it
@@ -231,222 +218,13 @@ namespace NightRider.GFJSON
         }
         #endregion DeserializeInto()
 
-        #region class JavaSchemeOptions
-        public class JavaSchemeOptions
-        {
-            public Options  options = Options.None;
-
-            /// <summary>
-            /// If true, it will allow classes-within-classes. If false, then it will define all the classes as subclass of the root class.
-            /// </summary>
-            public bool     allowNestedClasses = false;
-
-            public string   classDefinitionPrefix = "public ";
-            public string   classDefinitionSuffix = "\n{\n";
-
-            public string   subclassDefinitionPrefix = "public ";
-            public string   subclassDefinitionSuffix = "\n{\n";
-        }
-        #endregion class JavaSchemeOptions
-
-        #region [API] ExportJavaScheme()
-        public static string ExportJavaScheme( Type classType, JavaSchemeOptions options, int indent = 0 )
-        {
-            var sb = new StringBuilder();
-            ExportJavaScheme( sb, classType, options, false, indent );
-            return sb.ToString();
-        }
-        #endregion ExportJavaScheme()
-        #region [Util] ExportJavaScheme()
-        static void ExportJavaScheme( StringBuilder sb, Type classType, JavaSchemeOptions options, bool isSubclass, int indent, List<Type> subclasses = null )
-        {
-            var indentStr = "".PadLeft( 4 * indent );
-
-            // Class definition
-            sb.Append( Indent( isSubclass ? options.subclassDefinitionPrefix : options.classDefinitionPrefix, indentStr ) );
-            sb.Append( $"class {classType.Name}" );
-            sb.Append( isSubclass ? options.subclassDefinitionSuffix : options.classDefinitionSuffix );
-            sb.AppendLine();
-
-            var indentSubStr = "".PadLeft( 4 * (indent+1) );
-
-            sb.AppendLine( Indent( "private static final long serialVersionUID = 1L;", indentSubStr ) + "\n" );
-
-            // Only instance which created list of subclasses should handle it
-            var handleSubclasses = subclasses == null;
-            if( handleSubclasses ) subclasses = new List<Type>();
-
-            WalkAllSerializedFields( classType, null, ( fieldName, fieldInfo, fieldObj ) =>
-            {
-                // Skip fields with 'JavaSchemaSkip' attribute
-                if( Attribute.IsDefined( fieldInfo, typeof( JavaSchemeSkipAttribute ) ) ) return;
-
-                // Get type
-                var type = GetJavaType( fieldInfo.FieldType, options.options, subclasses );
-                if( type == null ) return;  // Not a serialized field
-
-                // Variable & JSON name
-                var name = fieldInfo.Name;
-                var jsonName = fieldName;
-
-                sb.AppendLine( $"{indentSubStr}@XmlElement(name = \"{jsonName}\")" );
-                sb.AppendLine( $"{indentSubStr}private {type} {name};\n" );
-            }, options.options, skipNullValue: false );
-
-            // Export all subclasses
-            if( handleSubclasses ) 
-            {
-                // NOTE: subclasses list can grow with each call to ExportJavaScheme, as new classes are being added
-                for( int idx = 0; idx < subclasses.Count; idx++ )
-                {
-                    ExportJavaScheme( sb, subclasses[idx], options, true, indent + 1, options.allowNestedClasses ? null : subclasses );
-                }
-            }
-
-            // Class ending
-            sb.AppendLine( $"{indentStr}}}" );
-        }
-        #endregion ExportJavaScheme()
-
-        #region [Util] GetJavaType()
-        static string GetJavaType( Type type, Options options, List<Type> allTypes )
-        {
-    #if SUPPORT_OBSCURED_VALUES
-            if( type == typeof( bool ) || type == typeof( ObscuredBool ) ) return "Boolean";
-            if( type == typeof( int ) || type == typeof( ObscuredInt ) ) return "Integer";
-            if( type == typeof( long ) || type == typeof( ObscuredLong ) ) return "Long";
-            if( type == typeof( float ) || type == typeof( ObscuredFloat ) ) return "Float";
-            if( type == typeof( double ) || type == typeof( ObscuredDouble ) ) return "Double";
-            if( type == typeof( string ) || type == typeof( ObscuredString ) ) return "String";
-    #endif
-            if( type == typeof( byte ) ) return "Byte";
-            if( type.IsEnum ) return "Long";
-
-            // Array
-            if( type.IsArray ) {
-                var baseType = type.GetElementType();
-                GetJavaType( baseType, options, allTypes );   // This will actually just add baseType to allTypes, if needed
-                return $"{GetJavaType( baseType, options, allTypes )}[]";
-            }
-
-            // List
-            if( type.IsGenericType && type.GetGenericTypeDefinition() == typeof( List<> ) ) {
-                var baseType = type.GetGenericArguments().Single();
-                GetJavaType( baseType, options, allTypes );   // This will actually just add baseType to allTypes, if needed
-                return $"List<{ GetJavaType( baseType, options, allTypes ) }>";
-            }
-
-            // ScriptableObject - NOT SERIALIZED by default
-            if( type.IsClass && Reflection.IsSubclassOfRawGeneric( typeof( ScriptableObject ), type ) ) {
-                if( options.HasFlag( Options.ReferenceScriptableObjects ) ) {
-                    if( !allTypes.Contains( type ) ) allTypes.Add( type );
-                    return type.Name;
-                } else return null;
-            }
-
-            // Class or Struct
-            if( type.IsClassOrStruct() ) {
-                if( !allTypes.Contains( type ) ) allTypes.Add( type );
-                return type.Name;
-            }
-
-            Log.Error( $"Not found type: '<b>{type}</b>'!" );
-            return "<UNSUPPORTED>" + type.Name;
-        }
-        #endregion GetJavaType()
-
-        #region [Util] Escape()
-        public static string Escape( string str )
-        {
-            return str.Replace( "\\", @"\\" )
-                .Replace( "\n", @"\n" )
-                .Replace( "\r", @"\r" )
-                .Replace( "\"", @"\""" )
-                .Replace( "\t", @"\t" )
-                .Replace( "\f", @"\f" )
-                .Replace( "\b", @"\b" );
-        }
-        #endregion Escape()
-        #region [Util] Unescape()
-        public static string Unescape( string str )
-        {
-            return str.Replace( @"\\", "\\" )
-                .Replace( @"\n", "\n" )
-                .Replace( @"\r", "\r" )
-                .Replace( @"\""", "\"" )
-                .Replace( @"\t", "\t" )
-                .Replace( @"\f", "\f" )
-                .Replace( @"\b", "\b" );
-        }
-        #endregion Unescape()
-        #region [Util] Indent()
-        static string Indent( string str, string indentString )
-        {
-            return string.Join( "\n", str.Split( '\n' ).Select( line => indentString + line ) );
-        }
-        #endregion Indent()
-
-        #region [Util] Type.IsClassOrStruct()
-        public static bool IsClassOrStruct( this Type type )
-        {
-            return (type.IsClass || (type.IsValueType && !type.IsPrimitive)) && !type.IsEnum;
-        }
-        #endregion IsClassOrStruct()
-
-        #region [Util] WalkAllSerializedFields()
-        internal static void WalkAllSerializedFields( Type type, object obj, Action<string, FieldInfo, object> onField, Options options, bool skipNullValue = true )
-        {
-            if( skipNullValue && obj == null ) return;
-
-            foreach( var field in type.GetFields( allFields ) )
-            {
-                // If [NonSerialized] or [JSONSkip] attribute exists, skip this field
-                if( Attribute.IsDefined( field, typeof( NonSerializedAttribute ) ) ) continue;
-                if( Attribute.IsDefined( field, typeof( JSONSkipAttribute ) ) ) continue;
-
-                // Serialize only fields which are public, or have [SerializeField] attribute
-                var shouldSerialize = field.IsPublic || Attribute.IsDefined( field, typeof( SerializeField ) );
-                if( !shouldSerialize ) continue;
-
-                // Class or struct - only if it has [Serialized] attribute, or if it inherits from ScriptableObject
-                var isClassOrStruct = field.FieldType.IsClassOrStruct();
-                if( isClassOrStruct ) {
-                    var isClassSerializable = Attribute.IsDefined( field.FieldType, typeof( SerializableAttribute ) )
-                        //|| Attribute.IsDefined( field.FieldType, typeof( IsSerializedAttribute ) )
-                        || Reflection.IsSubclassOfRawGeneric( typeof( ScriptableObject ), field.FieldType );
-                    if( !isClassSerializable ) continue;
-                }
-
-                // Field name - read it from custom attribute, if present
-                string fieldName;
-                if( !options.HasFlag(Options.IgnoreJSONName) )
-                {
-                    var jsonName = field.GetCustomAttributes( typeof(JSONNameAttribute), false ) as JSONNameAttribute[];
-                    if( jsonName.Length > 0 ) {         // Use GFJSON name
-                        fieldName = jsonName[0].Name;
-                    } else {
-                        // Check for DataMember
-                        var dataMemberName = field.GetCustomAttributes( typeof( DataMemberAttribute ), false ) as DataMemberAttribute[];
-                        if( dataMemberName.Length > 0 ) {
-                            fieldName = dataMemberName[0].Name;
-                        } else fieldName = field.Name;
-                    }
-
-                } else fieldName = field.Name;
-
-                onField( fieldName, field, obj != null ? field.GetValue(obj) : null );
-            }
-        }
-        #endregion WalkAllSerializedFields()
-
         #region [Util] Serialize()
-        private const BindingFlags allFields = BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic;
         private static void Serialize( Type type, object obj, StringBuilder sb, Options options )
         {
             var appendComma = false;
 
             // Serialize all the fields inside object
-            WalkAllSerializedFields( type, obj, (fieldName, field, value) =>
+            Reflection.WalkAllSerializedFields( type, obj, (fieldName, field, value) =>
             {
                 if( appendComma ) sb.Append( "," );
                 appendComma = true;
@@ -458,7 +236,25 @@ namespace NightRider.GFJSON
             }, options );
         }
         #endregion Serialize()
-        #region [Util] SerializeField()
+
+        #region [API] Serialize<T>()
+        /// <summary>
+        /// Serializes any (Unity serializable) object to a JSON string
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="obj"></param>
+        /// <param name="options">Serialization/deserialization options</param>
+        /// <returns></returns>
+        public static string Serialize<T>( T obj, Options options = Options.None )
+        {
+            var sb = new StringBuilder();
+            sb.Append( "{" );
+            Serialize( typeof(T), obj, sb, options );
+            sb.Append( "}" );
+            return sb.ToString();
+        }
+        #endregion Serialize<T>()
+        #region [API] SerializeField()
         public static string SerializeField( Type fieldType, object fieldObj, Options options = GFJSON.Options.None )
         {
             var sb = new StringBuilder();
@@ -478,11 +274,11 @@ namespace NightRider.GFJSON
 
             if( fieldType == typeof(string) )                   // *** String
             {
-                sb.Append($"\"{Escape(fieldObj as string)}\"");
+                sb.Append($"\"{StringParser.Escape(fieldObj as string)}\"");
             } else if( fieldType == typeof(char) )              // *** Char
             {
-                sb.Append( $"\"{Escape(((char)fieldObj).ToString())}\"" );
-    #if SUPPORT_OBSCURED_VALUES
+                sb.Append( $"\"{StringParser.Escape(((char)fieldObj).ToString())}\"" );
+#if SUPPORT_OBSCURED_VALUES
             } else if( fieldType == typeof(ObscuredBool) )      // *** ObscuredBool
             {
                 bool value = (bool)((ObscuredBool)fieldObj);
@@ -499,7 +295,8 @@ namespace NightRider.GFJSON
             } else if( fieldType == typeof(ObscuredDouble) ) {  // *** ObscuredDouble
                 double value = (double)((ObscuredDouble)fieldObj);
                 sb.Append( value.ToString( CultureInfo.InvariantCulture ) );
-    #endif
+#endif // SUPPORT_OBSCURED_VALUES
+
             } else if( fieldType == typeof(bool) )              // *** Boolean - serialize it as int, to save on space
             {
                 sb.Append( ((bool)fieldObj) ? "1" : "0" );
@@ -520,13 +317,13 @@ namespace NightRider.GFJSON
                 sb.Append( value.ToString( CultureInfo.InvariantCulture ) );
             } else if( fieldType.IsEnum )                       // *** Enum - serialize it as int
             {
-                if( options.HasFlag(Options.HumanReadableFormat) )
+                if( options.HasFlag( Options.HumanReadableFormat ) )
                 {
                     // Export enum as string + value
                     sb.Append( $"\"{fieldObj} ({(int)fieldObj})\"" );
                 } else {
                     // Export enum as number
-                    sb.Append( ((int)fieldObj).ToString(CultureInfo.InvariantCulture) );
+                    sb.Append( ((int)fieldObj).ToString( CultureInfo.InvariantCulture ) );
                 }
             } else if( fieldType.IsArray ) {                    // *** Array
                 sb.Append( "[" );
@@ -540,11 +337,10 @@ namespace NightRider.GFJSON
                     SerializeField( sb, arrType, val, options );
                 }
                 sb.Append( "]" );
-            } else if( fieldObj is IList )                      // *** List<T>
+            } else if( fieldObj is IList array )                // *** List<T>
             {
                 sb.Append( "[" );
 
-                var array = fieldObj as IList;
                 Type arrType = fieldType.GetGenericArguments()[0];  // Get List<T> type
                 for( int i = 0; array != null && i < array.Count; i++ )
                 {
@@ -553,6 +349,18 @@ namespace NightRider.GFJSON
                     SerializeField( sb, arrType, val, options );
                 }
                 sb.Append( "]" );
+
+            } else if( fieldObj is IDictionary dict )           // *** IDictionary<T>
+            {
+                if( options.HasFlag( Options.SerializeDictionaries ) )
+                {
+                    var args = fieldType.GetGenericArguments();
+                    sb.Append( Serialize( dict, args[0], args[1], options ) );
+                } else {
+                    sb.Append( "{}" );
+                    //Log.Warning( $"Not serialized: {fieldType} / {fieldObj}" );
+                }
+
 
             } else if( fieldType.IsClass                        // *** ScriptableObject - NOT SERIALIZED by default
                 && Reflection.IsSubclassOfRawGeneric( typeof( ScriptableObject ), fieldType ) )
@@ -563,7 +371,7 @@ namespace NightRider.GFJSON
                     sb.Append( $"\"{so.name}\"" );
                 } else {
                     sb.Append( "{}" );
-                    Log.Error( $"Not serialized: {fieldType} / {fieldObj}" );
+                    Log.Warning( $"Not serialized: {fieldType} / {fieldObj}" );
                 }
 
             } else if( fieldType.IsClassOrStruct() )            // *** Class or Struct
@@ -576,7 +384,7 @@ namespace NightRider.GFJSON
             }
         }
         #endregion SerializeField()
-        #region [Util] SerializeField<T>()
+        #region [API] SerializeField<T>()
         public static string SerializeField<T>( T fieldObj, Options options = Options.None )
         {
             var sb = new StringBuilder();
@@ -589,35 +397,42 @@ namespace NightRider.GFJSON
             SerializeField( sb, fieldType, fieldObj, options );
         }
         #endregion [Util] SerializeField<T>()
-        #region [Util] Serialize( Dictionary )
+        #region [API] Serialize( IDictionary )
         public static string Serialize<T, U>( Dictionary<T, U> data, Options options = Options.None )
+        {
+            return Serialize( data, typeof( T ), typeof( U ), options );
+        }
+        public static string Serialize( IDictionary data, Type keyType, Type valType, Options options = Options.None )
         {
             if( data == null ) return null;
 
             // Convert Dictionary to JSON string
             var sb = new StringBuilder();
-            sb.Append( "{" );
+            var humanReadable = options.HasFlag( Options.HumanReadableFormat );
+            sb.Append( humanReadable ? "{\n" : "{" );
 
             bool addComma = false;
             foreach( var key in data.Keys )
             {
-                if( addComma ) sb.Append( "," );
+                if( addComma ) sb.Append( humanReadable ? ",\n" : "," );
                 addComma = true;
-                var val = data[key];
-                var type = val.GetType();
 
-                sb.Append( $"\"{key}\":" );
+                // Key
+                if( humanReadable ) sb.Append( "    " );
+                SerializeField( sb, keyType, key, options );
 
-                SerializeField( sb, type, val, options );
+                // Value
+                sb.Append( humanReadable ? ": " : ":" );
+                SerializeField( sb, valType, data[key], options );
             }
-            sb.Append( "}" );
+            sb.Append( humanReadable ? "\n}" : "}" );
             return sb.ToString();
         }
         #endregion Serialize( Dictionary )
 
         #region [Util] Deserialize()
         public const NumberStyles numberStyle = NumberStyles.Integer | NumberStyles.Float | NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign;
-        private static object Deserialize( Object root, Type fieldType, bool allowCreationOfScriptableObjects, Options options, object origObject = null )
+        private static object Deserialize( JSONObject root, Type fieldType, bool allowCreationOfScriptableObjects, Options options, object origObject = null )
         {
             if( fieldType == typeof( string ) )                         // *** string
             {
@@ -625,7 +440,7 @@ namespace NightRider.GFJSON
             } else if( fieldType == typeof( char ) )                    // *** char
             {
                 return root.value != null && root.value.Length > 0 ? root.value[0] : (char)0;
-    #if SUPPORT_OBSCURED_VALUES
+#if SUPPORT_OBSCURED_VALUES
             } else if( fieldType == typeof( ObscuredBool ) ) {          // *** ObscuredBool
                 ObscuredBool value = root.value == "true" || root.value == "1";
                 return value;
@@ -660,7 +475,8 @@ namespace NightRider.GFJSON
                 }
                 ObscuredDouble value = val;
                 return value;
-    #endif
+#endif // SUPPORT_OBSCURED_VALUES
+
             } else if( fieldType == typeof( bool ) )                    // *** bool - serialized as int, to save on space
             {
                 return root.value == "1" || root.value == "true" ? true : false;
@@ -720,22 +536,82 @@ namespace NightRider.GFJSON
                     arr.SetValue( val, i );
                 }
                 return arr;
-            } else if( Reflection.IsGenericList( fieldType ) )     // *** List
+            } else if( Reflection.IsGenericList( fieldType ) )     // *** List<>, HashSet<> or Dictionary<,>
             {
-                if( root.list == null ) {
+                var arguments = fieldType.GetGenericArguments();
+                if( arguments.Length == 2 )
+                {
+                    if( options.HasFlag( Options.SerializeDictionaries ) && fieldType.IsDictionary() )    // *** Dictionary<,>
+                    {
+                        if( root.objects == null ) return null;
+
+                        var genericListType = typeof( Dictionary<,> );
+                        var constructedType = genericListType.MakeGenericType( arguments[0], arguments[1] );
+
+                        var dictionary = Activator.CreateInstance( constructedType ) as IDictionary;
+                        foreach( var nameStr in root.objects.Keys )
+                        {
+                            var jsonObj = new JSONObject() { value = nameStr };
+                            var name = Deserialize( jsonObj, arguments[0], false, options );
+                            var val = Deserialize( root.objects[nameStr], arguments[1], false, options );
+                            dictionary.Add( name, val );
+                        }
+                        return dictionary;
+                    }
+                    else {
+                        Log.Error( $"GFJSON: Unsupported type {fieldType.FullName}" );
+                        return null;
+                    }
+                }
+                else if( arguments.Length == 1 )
+                {
+    #if JSON_HASHSET_SUPPORT
+                    if( options.HasFlag( Options.SerializeHashSet ) && fieldType.IsHashSet() )  // *** HashSet<>
+                    {
+                        if( root.list == null ) return null;
+
+                        var genericListType = typeof( HashSet<> );
+                        Type elementType = arguments[0];
+                        var constructedHashSetType = genericListType.MakeGenericType( elementType );
+                        var hashSet = Activator.CreateInstance( constructedHashSetType );
+
+                        // Since HashSet<T> does not implement an IHashSet<T> interface, and there's no non-generic IHashSet interface
+                        // similar to IList, you can't directly cast a HashSet<T> to a common interface for all hash sets as you do with lists.
+                        // However, you can still create an instance of HashSet<T> dynamically and use reflection to invoke its Add method.
+                        MethodInfo addMethod = constructedHashSetType.GetMethod( "Add" );
+                        for( int i = 0; i < root.list.Count; i++ )
+                        {
+                            var val = Deserialize( root.list[i], elementType, false, options );
+                            addMethod.Invoke( hashSet, new[] { val } );
+                        }
+                        return hashSet;
+                    }
+                    else
+    #endif
+                    if( fieldType.IsList() )                                               // *** List<> - always serialized by default
+                    {
+                        if( root.list == null ) return null;
+
+                        var genericListType = typeof( List<> );
+                        Type elementType = arguments[0];  // Get List<T> type
+                        var constructedListType = genericListType.MakeGenericType( elementType );
+                        var list = Activator.CreateInstance( constructedListType ) as IList;
+                        for( int i = 0; i < root.list.Count; i++ )
+                        {
+                            var val = Deserialize( root.list[i], elementType, false, options );
+                            list.Add( val );
+                        }
+                        return list;
+
+                    } else {
+                        Log.Error( $"GFJSON: Unsupported type {fieldType.FullName}" );
+                        return null;
+                    }
+
+                } else {
+                    Log.Error( $"GFJSON: Unsupported type {fieldType.FullName}" );
                     return null;
                 }
-
-                Type listType = fieldType.GetGenericArguments()[0];  // Get List<T> type
-                var genericListType = typeof(List<>);
-                var constructedListType = genericListType.MakeGenericType(listType);
-                var list = Activator.CreateInstance(constructedListType) as IList;
-                for( int i = 0; i < root.list.Count; i++ )
-                {
-                    var val = Deserialize( root.list[i], listType, false, options );
-                    list.Add( val );
-                }
-                return list;
 
             } else if( fieldType.IsClass                                // *** ScriptableObject - NOT SERIALIZED by default
                         && !allowCreationOfScriptableObjects
@@ -755,7 +631,7 @@ namespace NightRider.GFJSON
                     ? (object)ScriptableObject.CreateInstance( fieldType ) // ScriptableObject - should not create with new()
                     : Activator.CreateInstance( fieldType );
 
-                WalkAllSerializedFields( fieldType, obj, ( fieldName, fieldInfo, fieldObj ) =>
+                Reflection.WalkAllSerializedFields( fieldType, obj, ( fieldName, fieldInfo, fieldObj ) =>
                 {
                     var childRoot = root.objects.ContainsKey(fieldName) ? root.objects[fieldName] : null;
                     if( childRoot == null ) return; // This field doesn't appear in JSON
