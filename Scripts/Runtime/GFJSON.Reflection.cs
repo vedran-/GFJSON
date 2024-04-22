@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
 using UnityEngine;
@@ -10,6 +11,42 @@ namespace NightRider.GFJSON
     {
         private const BindingFlags AllSerializableFields = BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic;
 
+        
+        internal static readonly Type[] UnitySpecialTypes = new Type[]
+        {
+            typeof(Vector2),
+            typeof(Vector3),
+            typeof(Vector4),
+            typeof(Quaternion),
+            typeof(Matrix4x4),
+            typeof(Color),
+            typeof(Color32),
+            typeof(Rect),
+            typeof(RectInt),
+            typeof(Bounds),
+            typeof(BoundsInt),
+            typeof(LayerMask),
+            typeof(AnimationCurve),
+            typeof(Gradient),
+            typeof(Transform),
+            typeof(Sprite),
+            typeof(Texture),
+            typeof(Texture2D),
+            typeof(Shader),
+            typeof(Material),
+            typeof(Animator),
+            typeof(RuntimeAnimatorController),
+            typeof(AudioClip),
+            typeof(Rigidbody),
+            typeof(Rigidbody2D),
+            typeof(Collider),
+            typeof(Collider2D),
+            typeof(Mesh),
+            typeof(ParticleSystem),
+            typeof(Font)
+        };
+
+        
         
         #region IsGenericList()
         // From https://stackoverflow.com/a/951602/1111634
@@ -106,8 +143,10 @@ namespace NightRider.GFJSON
 
                 // Class or struct - only if it has [Serialized] attribute, or if it inherits from ScriptableObject
                 var isClassOrStruct = field.FieldType.IsClassOrStruct();
-                if( isClassOrStruct ) {
-                    var isClassSerializable = Attribute.IsDefined( field.FieldType, typeof( SerializableAttribute ) )
+                if( isClassOrStruct )
+                {
+                    var isClassSerializable = UnitySpecialTypes.Contains(field.FieldType)  
+                        || Attribute.IsDefined( field.FieldType, typeof( SerializableAttribute ) )
                         //|| Attribute.IsDefined( field.FieldType, typeof( IsSerializedAttribute ) )
                         || Reflection.IsSubclassOfRawGeneric( typeof( ScriptableObject ), field.FieldType );
                     if( !isClassSerializable ) continue;
