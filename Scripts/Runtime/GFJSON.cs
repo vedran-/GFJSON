@@ -14,6 +14,7 @@ namespace NightRider.GFJSON
 {
     public static class GFJSON
     {
+        [Flags]
         public enum Options
         {
             // Serializes similar to Unity JSON serializer
